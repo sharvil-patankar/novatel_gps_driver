@@ -21,6 +21,7 @@ add_message_files(DIRECTORY msg FILES
   Gpgga.msg
   Gpgsa.msg
   Gpgsv.msg
+  Gphdt.msg
   Gprmc.msg
   Inscov.msg
   Inspva.msg
