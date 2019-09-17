@@ -24,6 +24,9 @@ set(BUILD_DEPENDS
   swri_nodelet
 )
 
+# Create json file for YouCompleteMe
+set( CMAKE_EXPORT_COMPILE_COMMANDS ON )
+
 find_package(catkin REQUIRED COMPONENTS ${BUILD_DEPENDS})
 
 find_package(Boost REQUIRED COMPONENTS system)
@@ -98,6 +101,12 @@ target_link_libraries(novatel_gps_node
   ${PROJECT_NAME}_nodelets
 )
 set_target_properties(novatel_gps_node PROPERTIES COMPILE_FLAGS "-std=c++11")
+
+# Symbolic link to the json file for YouCompleteMe
+set(symtarget ${CATKIN_DEVEL_PREFIX}/../build/compile_commands.json)
+set(symlink ${CMAKE_CURRENT_SOURCE_DIR}/compile_commands.json)
+ADD_CUSTOM_TARGET(link_target_driver ALL
+	                  COMMAND ${CMAKE_COMMAND} -E create_symlink ${symtarget} ${symlink})
 
 ### Build unit tests
 if(CATKIN_ENABLE_TESTING)

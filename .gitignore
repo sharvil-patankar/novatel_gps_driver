@@ -10,3 +10,4 @@ lib/
 build/
 .idea/
 cmake-build-debug/
+*/compile_commands.json
