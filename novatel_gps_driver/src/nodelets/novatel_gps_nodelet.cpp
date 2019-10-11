@@ -161,6 +161,7 @@
 #include <sensor_msgs/Imu.h>
 #include <sensor_msgs/NavSatFix.h>
 #include <std_msgs/Time.h>
+#include <geometry_msgs/PoseStamped.h>
 #include <swri_math_util/math_util.h>
 #include <swri_roscpp/parameters.h>
 #include <swri_roscpp/publisher.h>
@@ -192,6 +193,7 @@ namespace novatel_gps_driver
       publish_novatel_velocity_(false),
       publish_novatel_heading2_(false),
       publish_novatel_dual_antenna_heading_(false),
+      publish_novatel_pose_(false),
       publish_nmea_messages_(false),
       publish_range_messages_(false),
       publish_time_messages_(false),
@@ -245,6 +247,7 @@ namespace novatel_gps_driver
       swri::param(priv, "publish_novatel_velocity", publish_novatel_velocity_, publish_novatel_velocity_);
       swri::param(priv, "publish_novatel_heading2", publish_novatel_heading2_, publish_novatel_heading2_);
       swri::param(priv, "publish_novatel_dual_antenna_heading", publish_novatel_dual_antenna_heading_, publish_novatel_dual_antenna_heading_);
+      swri::param(priv, "publish_novatel_pose", publish_novatel_pose_, publish_novatel_pose_); 
       swri::param(priv, "publish_nmea_messages", publish_nmea_messages_, publish_nmea_messages_);
       swri::param(priv, "publish_range_messages", publish_range_messages_, publish_range_messages_);
       swri::param(priv, "publish_time_messages", publish_time_messages_, publish_time_messages_);
@@ -343,6 +346,11 @@ namespace novatel_gps_driver
         novatel_dual_antenna_heading_pub_ = swri::advertise<novatel_gps_msgs::NovatelDualAntennaHeading>(node, "dual_antenna_heading", 100);
       }
 
+      if (publish_novatel_pose_)
+      {
+        novatel_pose_pub_ = swri::advertise<geometry_msgs::PoseStamped>(node, "pose", 100);
+      }
+      
       if (publish_range_messages_)
       {
         range_pub_ = swri::advertise<novatel_gps_msgs::Range>(node, "range", 100);
@@ -476,6 +484,22 @@ namespace novatel_gps_driver
       {
         opts["bestvel" + format_suffix] = polling_period_;  // Best velocity
       }
+      if (publish_novatel_pose_)
+      {
+        double period = 1.0 / imu_rate_;
+        opts["corrimudata" + format_suffix] = period;
+        opts["inscov" + format_suffix] = 1.0;
+        opts["inspva" + format_suffix] = period;
+        opts["inspvax" + format_suffix] = period;
+        opts["insstdev" + format_suffix] = 1.0;
+        if (!use_binary_messages_)
+        {
+          NODELET_WARN("Using the ASCII message format with CORRIMUDATA logs is not recommended.  "
+                       "A serial link will not be able to keep up with the data rate.");
+        }
+        opts["bestutm" + format_suffix] = polling_period_;
+
+      }
       if (publish_range_messages_)
       {
         opts["range" + format_suffix] = 1.0;  // Range. 1 msg/sec is max rate
@@ -580,6 +604,7 @@ namespace novatel_gps_driver
     bool publish_novatel_velocity_;
     bool publish_novatel_heading2_;
     bool publish_novatel_dual_antenna_heading_;
+    bool publish_novatel_pose_;
     bool publish_nmea_messages_;
     bool publish_range_messages_;
     bool publish_time_messages_;
@@ -604,6 +629,7 @@ namespace novatel_gps_driver
     ros::Publisher novatel_velocity_pub_;
     ros::Publisher novatel_heading2_pub_;
     ros::Publisher novatel_dual_antenna_heading_pub_;
+    ros::Publisher novatel_pose_pub_;
     ros::Publisher gpgga_pub_;
     ros::Publisher gpgsv_pub_;
     ros::Publisher gpgsa_pub_;
@@ -694,6 +720,7 @@ namespace novatel_gps_driver
       std::vector<novatel_gps_msgs::NovatelUtmPositionPtr> utm_msgs;
       std::vector<novatel_gps_msgs::NovatelHeading2Ptr> heading2_msgs;
       std::vector<novatel_gps_msgs::NovatelDualAntennaHeadingPtr> dual_antenna_heading_msgs;
+      std::vector<geometry_msgs::PoseStampedPtr> pose_msgs;
       std::vector<gps_common::GPSFixPtr> fix_msgs;
       std::vector<novatel_gps_msgs::GpggaPtr> gpgga_msgs;
       std::vector<novatel_gps_msgs::GprmcPtr> gprmc_msgs;
@@ -939,6 +966,10 @@ namespace novatel_gps_driver
           msg->header.frame_id = frame_id_;
           trackstat_pub_.publish(msg);
         }
+      }
+      if (publish_novatel_pose_)
+      {
+
       }
       if (publish_imu_messages_)
       {
