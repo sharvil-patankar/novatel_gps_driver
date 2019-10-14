@@ -720,7 +720,6 @@ namespace novatel_gps_driver
       std::vector<novatel_gps_msgs::NovatelUtmPositionPtr> utm_msgs;
       std::vector<novatel_gps_msgs::NovatelHeading2Ptr> heading2_msgs;
       std::vector<novatel_gps_msgs::NovatelDualAntennaHeadingPtr> dual_antenna_heading_msgs;
-      std::vector<geometry_msgs::PoseStampedPtr> pose_msgs;
       std::vector<gps_common::GPSFixPtr> fix_msgs;
       std::vector<novatel_gps_msgs::GpggaPtr> gpgga_msgs;
       std::vector<novatel_gps_msgs::GprmcPtr> gprmc_msgs;
