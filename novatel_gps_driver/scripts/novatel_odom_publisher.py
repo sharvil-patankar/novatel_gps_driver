@@ -35,10 +35,10 @@ class NovatelOdomPublisher:
         self.odom.pose.pose.orientation = imu.orientation
 
         self.position_covariance = np.diag([utm.easting_sigma**2, utm.northing_sigma**2, utm.height_sigma**2])
-        self.odom.pose.covariance = ((np.block([
+        self.odom.pose.covariance = ((np.bmat([
             [self.position_covariance, np.zeros([3, 3])                              ],
             [np.zeros([3, 3]),         np.reshape(imu.orientation_covariance, (3, 3))]
-                                                ])).flatten()).tolist()
+                                               ])).A.flatten()).tolist()
         self.odom.twist.twist.angular = imu.angular_velocity
         self.pure_v = [np.cos(np.radians(vel.track_ground)) * vel.horizontal_speed,
                        np.sin(np.radians(vel.track_ground)) * vel.horizontal_speed,
@@ -49,10 +49,10 @@ class NovatelOdomPublisher:
         self.odom.twist.twist.linear.x = self.body_v[0]
         self.odom.twist.twist.linear.y = self.body_v[1]
         self.odom.twist.twist.linear.z = self.body_v[2]
-        self.odom.twist.covariance = ((np.block([
+        self.odom.twist.covariance = ((np.bmat([
             [np.reshape(inscov.velocity_covariance, (3, 3)), np.zeros([3, 3])                                  ],
             [np.zeros([3, 3]),                               np.reshape(imu.angular_velocity_covariance, (3, 3))]
-                                                ])).flatten()).tolist()
+                                                ])).A.flatten()).tolist()
         self.pub_odom.publish(self.odom)
 
 
