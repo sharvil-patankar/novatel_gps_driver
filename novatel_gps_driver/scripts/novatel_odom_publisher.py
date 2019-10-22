@@ -45,7 +45,7 @@ class NovatelOdomPublisher:
                        vel.vertical_speed,
                        0                                                      ]
         self.q = [imu.orientation.x, imu.orientation.y, imu.orientation.z, imu.orientation.w]
-        self.body_v = quaternion_multiply(quaternion_multiply(quaternion_conjugate(self.q), self.pur_v), self.q)
+        self.body_v = quaternion_multiply(quaternion_multiply(quaternion_conjugate(self.q), self.pure_v), self.q)
         self.odom.twist.twist.linear.x = self.body_v[0]
         self.odom.twist.twist.linear.y = self.body_v[1]
         self.odom.twist.twist.linear.z = self.body_v[2]
