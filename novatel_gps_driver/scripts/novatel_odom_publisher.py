@@ -11,6 +11,7 @@ import message_filters
 
 class NovatelOdomPublisher:
     def __init__(self):
+        self.rate = rospy.Rate(10)
         self.pub_odom = rospy.Publisher('novatel/odom', Odometry, queue_size=10)
         self.utm_sub = message_filters.Subscriber('novatel/bestutm', NovatelUtmPosition)
         self.inscov_sub = message_filters.Subscriber('novatel/inscov', Inscov)
@@ -54,6 +55,7 @@ class NovatelOdomPublisher:
             [np.zeros([3, 3]),                               np.reshape(imu.angular_velocity_covariance, (3, 3))]
                                                 ])).A.flatten()).tolist()
         self.pub_odom.publish(self.odom)
+        self.rate.sleep()
 
 
 if __name__ == '__main__':
