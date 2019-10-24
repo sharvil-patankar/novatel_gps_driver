@@ -2,6 +2,8 @@
 
 import rospy
 import numpy as np
+import tf2_ros
+from geometry_msgs.msg import TransformStamped
 from nav_msgs.msg import Odometry
 from novatel_gps_msgs.msg import NovatelUtmPosition, NovatelVelocity, Inscov
 from sensor_msgs.msg import Imu
@@ -19,8 +21,13 @@ class NovatelOdomPublisher:
         self.imu_sub = message_filters.Subscriber('novatel/imu', Imu)
 
         self.odom = Odometry()
-        self.odom.header.frame_id = 'utm'
+        self.odom.header.frame_id = 'map'
         self.odom.child_frame_id = 'gps_imu'
+        
+        self.br = tf2_ros.TransformBroadcaster()
+        self.t = TransformStamped()
+        self.t.header.frame_id = 'map'
+        self.t.child_frame_id = 'gps_imu'
 
     def sub_and_pub(self):
         self.ts = message_filters.ApproximateTimeSynchronizer([
@@ -55,6 +62,12 @@ class NovatelOdomPublisher:
             [np.zeros([3, 3]),                               np.reshape(imu.angular_velocity_covariance, (3, 3))]
                                                 ])).A.flatten()).tolist()
         self.pub_odom.publish(self.odom)
+
+        self.t.header.stamp = self.odom.header.stamp
+        self.t.transform.translation = self.odom.pose.pose.position
+        self.t.transform.rotation = self.odom.pose.pose.orientation
+        self.br.sendTransform(self.t)
+
         self.rate.sleep()
 
 
