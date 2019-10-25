@@ -1,0 +1,20 @@
+
+verbose: true
+connection_type: udp
+device: 192.168.10.195:3002
+publish_novatel_positions: true
+frame_id: map
+imu_frame_id: base_link
+imu_rate: 20
+publish_diagnostics: true
+publish_nmea_messages: true
+use_binary_messages: true
+wait_for_position: true
+publish_novatel_heading2: false
+publish_novatel_dual_antenna_heading: false
+publish_novatel_velocity: true
+publish_novatel_utm_positions: true
+publish_imu_messages: true
+publish_insstdev_messages: true
+publish_novatel_xyz_positions: false
+
