@@ -22,12 +22,17 @@ class NovatelOdomPublisher:
 
         self.odom = Odometry()
         self.odom.header.frame_id = 'map'
-        self.odom.child_frame_id = 'base_link'
-        
+        self.odom.child_frame_id = 'gps_imu'
+
+        self.buff = tf2_ros.Buffer()
+        self.lis = tf2_ros.TransformListener(self.buff)
+        # self.trans = self.buff.lookup_transform('gps_imu','base_footprint', rospy.Time.now(), rospy.Duration(1.0))
+        # self.trans.transform()
+        self.lis.unregister()
         self.br = tf2_ros.TransformBroadcaster()
-        self.t = TransformStamped()
-        self.t.header.frame_id = 'map'
-        self.t.child_frame_id = 'base_link'
+        self.t_temp = TransformStamped()
+        self.t_temp.header.frame_id = 'map'
+        self.t_temp.child_frame_id = 'gps_imu'
 
     def sub_and_pub(self):
         self.ts = message_filters.ApproximateTimeSynchronizer([
@@ -64,9 +69,10 @@ class NovatelOdomPublisher:
                                                 ])).A.flatten()).tolist()
         self.pub_odom.publish(self.odom)
 
-        self.t.header.stamp = self.odom.header.stamp
-        self.t.transform.translation = self.odom.pose.pose.position
-        self.t.transform.rotation = self.odom.pose.pose.orientation
+        self.t_temp.header.stamp = self.odom.header.stamp
+        self.t_temp.transform.translation = self.odom.pose.pose.position
+        self.t_temp.transform.rotation = self.odom.pose.pose.orientation
+        self.t = self.buff.transform(self.t,'base_footprint')
         self.br.sendTransform(self.t)
 
         self.rate.sleep()
