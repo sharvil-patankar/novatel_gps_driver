@@ -17,6 +17,9 @@ set(DEPS
   swri_serial_util
   swri_string_util 
   tf
+  tf2
+  tf2_geometry_msgs
+  tf2_ros
 )
 
 set(BUILD_DEPENDS
