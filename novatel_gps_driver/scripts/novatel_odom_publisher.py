@@ -4,7 +4,6 @@ import rospy
 import numpy as np
 import tf2_ros
 from geometry_msgs.msg import TransformStamped, PoseStamped
-from tf2_geometry_msgs import *
 from nav_msgs.msg import Odometry
 from novatel_gps_msgs.msg import NovatelUtmPosition, NovatelVelocity, Insstdev
 from sensor_msgs.msg import Imu
@@ -81,16 +80,10 @@ class NovatelOdomPublisher:
                                                 ])).A.flatten()).tolist()
         self.pub_odom.publish(self.odom)
 
-<<<<<<< HEAD
-        self.t.header.stamp = self.odom.header.stamp
-        self.t.transform.translation = self.odom.pose.pose.position
-        self.t.transfrom.rotation = self.odom.pose.pose.orientation
-=======
         self.t_temp.header.stamp = self.odom.header.stamp
         self.t_temp.transform.translation = self.odom.pose.pose.position
         self.t_temp.transform.rotation = self.odom.pose.pose.orientation
         self.t = self.buff.transform(self.t_temp,'base_footprint')
->>>>>>> df75e19dce175f85533bdcdd80f5a6285a1871d6
         self.br.sendTransform(self.t)
 
         self.rate.sleep()
