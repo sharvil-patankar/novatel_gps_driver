@@ -3,7 +3,8 @@
 import rospy
 import numpy as np
 import tf2_ros
-from geometry_msgs.msg import TransformStamped, PoseStamped
+from tf2_geometry_msgs.tf2_geometry_msgs import PoseStamped
+from geometry_msgs.msg import TransformStamped
 from nav_msgs.msg import Odometry
 from novatel_gps_msgs.msg import NovatelUtmPosition, NovatelVelocity, Insstdev
 from sensor_msgs.msg import Imu
