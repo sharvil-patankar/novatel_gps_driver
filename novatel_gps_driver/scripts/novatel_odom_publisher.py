@@ -4,6 +4,7 @@ import rospy
 import numpy as np
 import tf2_ros
 from geometry_msgs.msg import TransformStamped, PoseStamped
+from tf2_geometry_msgs import *
 from nav_msgs.msg import Odometry
 from novatel_gps_msgs.msg import NovatelUtmPosition, NovatelVelocity, Insstdev
 from sensor_msgs.msg import Imu
@@ -38,11 +39,13 @@ class NovatelOdomPublisher:
     def sub_and_pub(self):
         self.ts = message_filters.ApproximateTimeSynchronizer([
             self.utm_sub, self.insstdev_sub, self.vel_sub, self.imu_sub], 10, 0.01)
-        self.ts.registerCallback(self.publish_odom)
+        rospy.loginfo("time synchronized")
+	self.ts.registerCallback(self.publish_odom)
         rospy.spin()
 
     def publish_odom(self, utm, insstdev, vel, imu):
-        self.odom.header.stamp = rospy.Time.now()
+        rospy.loginfo("In callback")
+	self.odom.header.stamp = rospy.Time.now()
         self.odom.pose.pose.position.x = utm.easting
         self.odom.pose.pose.position.y = utm.northing
         self.odom.pose.pose.position.z = utm.height
@@ -78,9 +81,16 @@ class NovatelOdomPublisher:
                                                 ])).A.flatten()).tolist()
         self.pub_odom.publish(self.odom)
 
+<<<<<<< HEAD
         self.t.header.stamp = self.odom.header.stamp
         self.t.transform.translation = self.odom.pose.pose.position
         self.t.transfrom.rotation = self.odom.pose.pose.orientation
+=======
+        self.t_temp.header.stamp = self.odom.header.stamp
+        self.t_temp.transform.translation = self.odom.pose.pose.position
+        self.t_temp.transform.rotation = self.odom.pose.pose.orientation
+        self.t = self.buff.transform(self.t_temp,'base_footprint')
+>>>>>>> df75e19dce175f85533bdcdd80f5a6285a1871d6
         self.br.sendTransform(self.t)
 
         self.rate.sleep()
