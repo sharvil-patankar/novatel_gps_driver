@@ -5,6 +5,7 @@ import numpy as np
 import tf2_ros
 # from tf2_geometry_msgs.tf2_geometry_msgs import PoseStamped
 # import tf2_geometry_msgs.tf2_geometry_msgs as tf2_gm
+from tf2_msgs.msg import TFMessage
 from geometry_msgs.msg import TransformStamped, Point
 from nav_msgs.msg import Odometry
 from novatel_gps_msgs.msg import NovatelUtmPosition, NovatelVelocity, Insstdev
@@ -15,9 +16,9 @@ import message_filters
 
 class NovatelOdomPublisher:
     def __init__(self):
-        self.rate = rospy.Rate(10)
+        self.rate = rospy.Rate(30)
         self.pub_odom = rospy.Publisher('novatel/odom', Odometry, queue_size=10)
-        self.utm_sub = message_filters.Subscriber('novatel/bestutm', NovatelUtmPosition)
+	self.utm_sub = message_filters.Subscriber('novatel/bestutm', NovatelUtmPosition)
         self.insstdev_sub = message_filters.Subscriber('novatel/insstdev', Insstdev)
         self.vel_sub = message_filters.Subscriber('novatel/bestvel', NovatelVelocity)
         self.imu_sub = message_filters.Subscriber('novatel/imu', Imu)
@@ -77,7 +78,8 @@ class NovatelOdomPublisher:
             ])).A.flatten()).tolist()
         self.pub_odom.publish(self.odom)
 
-        self.t.transform.translation = self.odom.pose.pose.position
+        self.t.header.stamp = rospy.Time.now()
+	self.t.transform.translation = self.odom.pose.pose.position
         self.t.transform.rotation = self.odom.pose.pose.orientation
         self.br.sendTransform(self.t)
         self.rate.sleep()
@@ -87,7 +89,7 @@ if __name__ == '__main__':
     rospy.init_node('novatel_odom_publisher', anonymous=True)
     try:
         novatel_odom_publisher_class = NovatelOdomPublisher()
-        odom_origin = rospy.get_param("origin")
+        odom_origin = rospy.get_param("novatel/novatel/origin")
         novatel_odom_publisher_class.sub_and_pub(odom_origin)
     except rospy.ROSInterruptException:
         pass
