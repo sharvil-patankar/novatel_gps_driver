@@ -17,5 +17,5 @@ publish_novatel_utm_positions: true
 publish_imu_messages: true
 publish_insstdev_messages: true
 publish_novatel_xyz_positions: false
-origin: {x: 319480 y: 4706260 z: 209}
+origin: {x: 319480, y: 4706260, z: 209}
 
