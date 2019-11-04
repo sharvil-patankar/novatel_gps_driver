@@ -17,11 +17,11 @@ import message_filters
 class NovatelOdomPublisher:
     def __init__(self):
         self.rate = rospy.Rate(30)
-        self.pub_odom = rospy.Publisher('novatel/odom', Odometry, queue_size=10)
-	self.utm_sub = message_filters.Subscriber('novatel/bestutm', NovatelUtmPosition)
-        self.insstdev_sub = message_filters.Subscriber('novatel/insstdev', Insstdev)
-        self.vel_sub = message_filters.Subscriber('novatel/bestvel', NovatelVelocity)
-        self.imu_sub = message_filters.Subscriber('novatel/imu', Imu)
+        self.pub_odom = rospy.Publisher('odom', Odometry, queue_size=10)
+	self.utm_sub = message_filters.Subscriber('bestutm', NovatelUtmPosition)
+        self.insstdev_sub = message_filters.Subscriber('insstdev', Insstdev)
+        self.vel_sub = message_filters.Subscriber('bestvel', NovatelVelocity)
+        self.imu_sub = message_filters.Subscriber('imu', Imu)
 
         self.odom = Odometry()
         self.odom.header.frame_id = 'odom'
@@ -89,7 +89,7 @@ if __name__ == '__main__':
     rospy.init_node('novatel_odom_publisher', anonymous=True)
     try:
         novatel_odom_publisher_class = NovatelOdomPublisher()
-        odom_origin = rospy.get_param("novatel/novatel/origin")
+        odom_origin = rospy.get_param("novatel/origin")
         novatel_odom_publisher_class.sub_and_pub(odom_origin)
     except rospy.ROSInterruptException:
         pass
