@@ -1,7 +1,7 @@
 
 verbose: true
-connection_type: udp
-device: 192.168.10.195:3002
+connection_type: tcp
+device: 192.168.10.195:3001
 publish_novatel_positions: true
 frame_id: map
 imu_frame_id: base_link
@@ -15,7 +15,7 @@ publish_novatel_dual_antenna_heading: false
 publish_novatel_velocity: true
 publish_novatel_utm_positions: true
 publish_imu_messages: true
-publish_insstdev_messages: true
+
 publish_novatel_xyz_positions: false
 origin: {x: 319480, y: 4706260, z: 209}
 
