@@ -5,7 +5,6 @@ import numpy as np
 import tf2_ros
 # from tf2_geometry_msgs.tf2_geometry_msgs import PoseStamped
 # import tf2_geometry_msgs.tf2_geometry_msgs as tf2_gm
-from tf2_msgs.msg import TFMessage
 from geometry_msgs.msg import TransformStamped, Point
 from nav_msgs.msg import Odometry
 from novatel_gps_msgs.msg import NovatelUtmPosition, NovatelVelocity, Insstdev
@@ -18,8 +17,8 @@ class NovatelOdomPublisher:
     def __init__(self):
         self.rate = rospy.Rate(30)
         self.pub_odom = rospy.Publisher('odom', Odometry, queue_size=10)
-	self.utm_sub = message_filters.Subscriber('bestutm', NovatelUtmPosition)
-        self.insstdev_sub = message_filters.Subscriber('insstdev', Insstdev)
+        self.utm_sub = message_filters.Subscriber('bestutm', NovatelUtmPosition)
+        self.insstdev_sub = rospy.Subscriber('insstdev', Insstdev, self.save_covariance)
         self.vel_sub = message_filters.Subscriber('bestvel', NovatelVelocity)
         self.imu_sub = message_filters.Subscriber('imu', Imu)
 
@@ -40,12 +39,18 @@ class NovatelOdomPublisher:
         self.origin.x = origin['x']
         self.origin.y = origin['y']
         self.origin.z = origin['z']
+        self.lin_vel_cov = Insstdev()
         self.ts = message_filters.ApproximateTimeSynchronizer([
-            self.utm_sub, self.insstdev_sub, self.vel_sub, self.imu_sub], 10, 0.01)
+            self.utm_sub, self.vel_sub, self.imu_sub], 10, 0.01)
         self.ts.registerCallback(self.publish_odom)
         rospy.spin()
 
-    def publish_odom(self, utm, insstdev, vel, imu):
+    def save_covariance(self, data):
+        self.lin_vel_cov = np.diag(np.array([data.east_velocity_dev**2,
+                                             data.north_velocity_dev**2,
+                                             data.up_velocity_dev**2]))
+
+    def publish_odom(self, utm, vel, imu):
         self.odom.header.stamp = rospy.Time.now()
         self.odom.pose.pose.position.x = utm.easting - self.origin.x
         self.odom.pose.pose.position.y = utm.northing - self.origin.y
@@ -69,9 +74,6 @@ class NovatelOdomPublisher:
         self.odom.twist.twist.linear.x = self.body_v[0]
         self.odom.twist.twist.linear.y = self.body_v[1]
         self.odom.twist.twist.linear.z = self.body_v[2]
-        self.lin_vel_cov = np.diag(np.array([insstdev.east_velocity_dev**2,
-                                             insstdev.north_velocity_dev**2,
-                                             insstdev.up_velocity_dev**2]))
         self.odom.twist.covariance = ((np.bmat([
             [self.lin_vel_cov, np.zeros([3, 3])                                  ],
             [np.zeros([3, 3]), np.reshape(imu.angular_velocity_covariance, (3, 3))]
@@ -79,7 +81,7 @@ class NovatelOdomPublisher:
         self.pub_odom.publish(self.odom)
 
         self.t.header.stamp = rospy.Time.now()
-	self.t.transform.translation = self.odom.pose.pose.position
+        self.t.transform.translation = self.odom.pose.pose.position
         self.t.transform.rotation = self.odom.pose.pose.orientation
         self.br.sendTransform(self.t)
         self.rate.sleep()
