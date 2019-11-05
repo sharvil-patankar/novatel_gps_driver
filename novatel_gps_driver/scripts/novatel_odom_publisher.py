@@ -39,7 +39,7 @@ class NovatelOdomPublisher:
         self.origin.x = origin['x']
         self.origin.y = origin['y']
         self.origin.z = origin['z']
-        self.lin_vel_cov = Insstdev()
+        self.lin_vel_cov = np.zeros((3,3))
         self.ts = message_filters.ApproximateTimeSynchronizer([
             self.utm_sub, self.vel_sub, self.imu_sub], 10, 0.01)
         self.ts.registerCallback(self.publish_odom)
@@ -59,8 +59,8 @@ class NovatelOdomPublisher:
 
         self.position_covariance = np.diag([utm.easting_sigma**2, utm.northing_sigma**2, utm.height_sigma**2])
         self.odom.pose.covariance = ((np.bmat([
-            [self.position_covariance, np.zeros([3, 3])                              ],
-            [np.zeros([3, 3]),         np.reshape(imu.orientation_covariance, (3, 3))]
+            [self.position_covariance, np.zeros((3, 3))                              ],
+            [np.zeros((3, 3)),         np.reshape(imu.orientation_covariance, (3, 3))]
                                               ])).A.flatten()).tolist()
 
         self.odom.twist.twist.angular = imu.angular_velocity
