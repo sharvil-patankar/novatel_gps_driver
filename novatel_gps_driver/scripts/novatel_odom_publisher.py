@@ -3,9 +3,7 @@
 import rospy
 import numpy as np
 import tf2_ros
-# from tf2_geometry_msgs.tf2_geometry_msgs import PoseStamped
-# import tf2_geometry_msgs.tf2_geometry_msgs as tf2_gm
-from geometry_msgs.msg import TransformStamped, Point
+from geometry_msgs.msg import TransformStamped
 from nav_msgs.msg import Odometry
 from novatel_gps_msgs.msg import NovatelUtmPosition, NovatelVelocity, Insstdev
 from sensor_msgs.msg import Imu
@@ -30,15 +28,11 @@ class NovatelOdomPublisher:
         self.lis = tf2_ros.TransformListener(self.buff)
         self.lis.unregister()
         self.br = tf2_ros.TransformBroadcaster()
-        self.t = TransformStamped()
+        self.map = TransformStamped()
         self.t.header.frame_id = 'odom'
         self.t.child_frame_id = 'base_link'
 
-    def sub_and_pub(self, origin):
-        self.origin = Point()
-        self.origin.x = origin['x']
-        self.origin.y = origin['y']
-        self.origin.z = origin['z']
+    def sub_and_pub(self):
         self.lin_vel_cov = np.zeros((3,3))
         self.ts = message_filters.ApproximateTimeSynchronizer([
             self.utm_sub, self.vel_sub, self.imu_sub], 10, 0.01)
@@ -52,9 +46,9 @@ class NovatelOdomPublisher:
 
     def publish_odom(self, utm, vel, imu):
         self.odom.header.stamp = rospy.Time.now()
-        self.odom.pose.pose.position.x = utm.easting - self.origin.x
-        self.odom.pose.pose.position.y = utm.northing - self.origin.y
-        self.odom.pose.pose.position.z = utm.height - self.origin.z
+        self.odom.pose.pose.position.x = utm.easting
+        self.odom.pose.pose.position.y = utm.northing
+        self.odom.pose.pose.position.z = utm.height
         self.odom.pose.pose.orientation = imu.orientation
 
         self.position_covariance = np.diag([utm.easting_sigma**2, utm.northing_sigma**2, utm.height_sigma**2])
@@ -91,7 +85,6 @@ if __name__ == '__main__':
     rospy.init_node('novatel_odom_publisher', anonymous=True)
     try:
         novatel_odom_publisher_class = NovatelOdomPublisher()
-        odom_origin = rospy.get_param("novatel/origin")
-        novatel_odom_publisher_class.sub_and_pub(odom_origin)
+        novatel_odom_publisher_class.sub_and_pub()
     except rospy.ROSInterruptException:
         pass
