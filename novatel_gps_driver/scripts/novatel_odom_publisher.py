@@ -28,7 +28,7 @@ class NovatelOdomPublisher:
         self.lis = tf2_ros.TransformListener(self.buff)
         self.lis.unregister()
         self.br = tf2_ros.TransformBroadcaster()
-        self.map = TransformStamped()
+        self.t = TransformStamped()
         self.t.header.frame_id = 'odom'
         self.t.child_frame_id = 'base_link'
 
