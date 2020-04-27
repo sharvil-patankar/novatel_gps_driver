@@ -146,6 +146,7 @@
 #include <novatel_gps_msgs/NovatelFRESET.h>
 #include <novatel_gps_msgs/NovatelMessageHeader.h>
 #include <novatel_gps_msgs/NovatelPosition.h>
+#include <novatel_gps_msgs/NovatelPsrdop2.h>
 #include <novatel_gps_msgs/NovatelUtmPosition.h>
 #include <novatel_gps_msgs/NovatelVelocity.h>
 #include <novatel_gps_msgs/NovatelHeading2.h>
@@ -192,6 +193,7 @@ namespace novatel_gps_driver
       publish_novatel_velocity_(false),
       publish_novatel_heading2_(false),
       publish_novatel_dual_antenna_heading_(false),
+      publish_novatel_psrdop2_(false),
       publish_nmea_messages_(false),
       publish_range_messages_(false),
       publish_time_messages_(false),
@@ -245,6 +247,7 @@ namespace novatel_gps_driver
       swri::param(priv, "publish_novatel_velocity", publish_novatel_velocity_, publish_novatel_velocity_);
       swri::param(priv, "publish_novatel_heading2", publish_novatel_heading2_, publish_novatel_heading2_);
       swri::param(priv, "publish_novatel_dual_antenna_heading", publish_novatel_dual_antenna_heading_, publish_novatel_dual_antenna_heading_);
+      swri::param(priv, "publish_novatel_psrdop2", publish_novatel_psrdop2_, publish_novatel_psrdop2_);
       swri::param(priv, "publish_nmea_messages", publish_nmea_messages_, publish_nmea_messages_);
       swri::param(priv, "publish_range_messages", publish_range_messages_, publish_range_messages_);
       swri::param(priv, "publish_time_messages", publish_time_messages_, publish_time_messages_);
@@ -264,9 +267,8 @@ namespace novatel_gps_driver
       swri::param(priv, "frame_id", frame_id_, std::string(""));
       
       //set NovatelGps parameters
-      swri::param(priv, "gpgga_gprmc_sync_tol", gps_.gpgga_gprmc_sync_tol_, 0.01);
-      swri::param(priv, "gpgga_position_sync_tol", gps_.gpgga_position_sync_tol_, 0.01);
-      swri::param(priv, "wait_for_position", gps_.wait_for_position_, false);
+      swri::param(priv, "gpsfix_sync_tol", gps_.gpsfix_sync_tol_, 0.01);
+      swri::param(priv, "wait_for_sync", gps_.wait_for_sync_, true);
 
       // Reset Service
       reset_service_ = priv.advertiseService("freset", &NovatelGpsNodelet::resetService, this);
@@ -332,6 +334,10 @@ namespace novatel_gps_driver
       {
         novatel_velocity_pub_ = swri::advertise<novatel_gps_msgs::NovatelVelocity>(node, "bestvel", 100);
       }
+      else
+      {
+        gps_.wait_for_sync_ = false;
+      }
 
       if (publish_novatel_heading2_)
       {
@@ -341,6 +347,14 @@ namespace novatel_gps_driver
       if (publish_novatel_dual_antenna_heading_)
       {
         novatel_dual_antenna_heading_pub_ = swri::advertise<novatel_gps_msgs::NovatelDualAntennaHeading>(node, "dual_antenna_heading", 100);
+      }
+
+      if (publish_novatel_psrdop2_)
+      {
+        novatel_psrdop2_pub_ = swri::advertise<novatel_gps_msgs::NovatelPsrdop2>(node,
+            "psrdop2",
+            100,
+            true);
       }
 
       if (publish_range_messages_)
@@ -436,6 +450,10 @@ namespace novatel_gps_driver
       {
         opts["dualantennaheading" + format_suffix] = polling_period_;
       }
+      if (publish_novatel_psrdop2_)
+      {
+        opts["psrdop2" + format_suffix] = -1.0;
+      }
       if (publish_gpgsa_)
       {
         opts["gpgsa"] = polling_period_;
@@ -489,6 +507,7 @@ namespace novatel_gps_driver
       {
         gps_.SetSerialBaud(serial_baud_);
       }
+      ros::WallRate rate(1000.0);
       while (ros::ok())
       {
         if (gps_.Connect(device_, connection_, opts))
@@ -511,7 +530,7 @@ namespace novatel_gps_driver
             // Spin once to let the ROS callbacks fire
             ros::spinOnce();
             // Sleep for a microsecond to prevent CPU hogging
-            boost::this_thread::sleep(boost::posix_time::microseconds(1));
+            rate.sleep();
           }  // While (gps_.IsConnected() && ros::ok()) (inner loop to process data from device)
         }
         else  // Could not connect to the device
@@ -528,7 +547,7 @@ namespace novatel_gps_driver
         {
           // If ROS is still OK but we got disconnected, we're going to try
           // to reconnect, but wait just a bit so we don't spam the device.
-          ros::Duration(reconnect_delay_s_).sleep();
+          ros::WallDuration(reconnect_delay_s_).sleep();
         }
 
         // Poke the diagnostic updater. It will only fire diagnostics if
@@ -542,7 +561,7 @@ namespace novatel_gps_driver
         // Spin once to let the ROS callbacks fire
         ros::spinOnce();
         // Sleep for a microsecond to prevent CPU hogging
-        boost::this_thread::sleep(boost::posix_time::microseconds(1));
+        rate.sleep();
 
         if (connection_ == NovatelGps::PCAP)
         {
@@ -580,6 +599,7 @@ namespace novatel_gps_driver
     bool publish_novatel_velocity_;
     bool publish_novatel_heading2_;
     bool publish_novatel_dual_antenna_heading_;
+    bool publish_novatel_psrdop2_;
     bool publish_nmea_messages_;
     bool publish_range_messages_;
     bool publish_time_messages_;
@@ -604,6 +624,7 @@ namespace novatel_gps_driver
     ros::Publisher novatel_velocity_pub_;
     ros::Publisher novatel_heading2_pub_;
     ros::Publisher novatel_dual_antenna_heading_pub_;
+    ros::Publisher novatel_psrdop2_pub_;
     ros::Publisher gpgga_pub_;
     ros::Publisher gpgsv_pub_;
     ros::Publisher gpgsa_pub_;
@@ -885,6 +906,18 @@ namespace novatel_gps_driver
           msg->header.stamp += sync_offset;
           msg->header.frame_id = frame_id_;
           novatel_dual_antenna_heading_pub_.publish(msg);
+        }
+      }
+
+      if (publish_novatel_psrdop2_)
+      {
+        std::vector<novatel_gps_msgs::NovatelPsrdop2Ptr> psrdop2_msgs;
+        gps_.GetNovatelPsrdop2Messages(psrdop2_msgs);
+        for (const auto& msg : psrdop2_msgs)
+        {
+          msg->header.stamp += sync_offset;
+          msg->header.frame_id = frame_id_;
+          novatel_psrdop2_pub_.publish(msg);
         }
       }
 

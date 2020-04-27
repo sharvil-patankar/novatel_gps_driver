@@ -43,9 +43,8 @@
 namespace novatel_gps_driver
 {
   NovatelGps::NovatelGps() :
-      gpgga_gprmc_sync_tol_(0.01),
-      gpgga_position_sync_tol_(0.01),
-      wait_for_position_(false),
+      gpsfix_sync_tol_(0.01),
+      wait_for_sync_(true),
       connection_(SERIAL),
       is_connected_(false),
       imu_rate_forced_(false),
@@ -56,12 +55,10 @@ namespace novatel_gps_driver
       clocksteering_msgs_(MAX_BUFFER_SIZE),
       corrimudata_msgs_(MAX_BUFFER_SIZE),
       gpgga_msgs_(MAX_BUFFER_SIZE),
-      gpgga_sync_buffer_(SYNC_BUFFER_SIZE),
       gpgsa_msgs_(MAX_BUFFER_SIZE),
       gpgsv_msgs_(MAX_BUFFER_SIZE),
       gphdt_msgs_(MAX_BUFFER_SIZE),
       gprmc_msgs_(MAX_BUFFER_SIZE),
-      gprmc_sync_buffer_(SYNC_BUFFER_SIZE),
       imu_msgs_(MAX_BUFFER_SIZE),
       inscov_msgs_(MAX_BUFFER_SIZE),
       inspva_msgs_(MAX_BUFFER_SIZE),
@@ -71,9 +68,11 @@ namespace novatel_gps_driver
       novatel_xyz_positions_(MAX_BUFFER_SIZE),
       novatel_utm_positions_(MAX_BUFFER_SIZE),
       novatel_velocities_(MAX_BUFFER_SIZE),
-      position_sync_buffer_(SYNC_BUFFER_SIZE),
+      bestpos_sync_buffer_(SYNC_BUFFER_SIZE),
+      bestvel_sync_buffer_(SYNC_BUFFER_SIZE),
       heading2_msgs_(MAX_BUFFER_SIZE),
       dual_antenna_heading_msgs_(MAX_BUFFER_SIZE),
+      psrdop2_msgs_(MAX_BUFFER_SIZE),
       range_msgs_(MAX_BUFFER_SIZE),
       time_msgs_(MAX_BUFFER_SIZE),
       trackstat_msgs_(MAX_BUFFER_SIZE),
@@ -326,139 +325,115 @@ namespace novatel_gps_driver
     // Clear out the fix_messages list before filling it
     fix_messages.clear();
 
-    // both a gpgga and a gprmc message are required to fill the GPSFix message
-    while (!gpgga_sync_buffer_.empty() && !gprmc_sync_buffer_.empty())
+    while (!bestpos_sync_buffer_.empty())
     {
-      double gpgga_time = gpgga_sync_buffer_.front().utc_seconds;
-      double gprmc_time = gprmc_sync_buffer_.front().utc_seconds;
+      auto& bestpos = bestpos_sync_buffer_.front();
 
-      // Find the time difference between gpgga and gprmc time
-      double dt = gpgga_time - gprmc_time;
-      // Handle times around midnight
-      if (dt > 43200.0)
-      {
-        dt -= 86400.0;
-      }
-      if (dt < -43200.0)
-      {
-        dt += 86400.0;
-      }
+      bool synced = false;
 
-      // Get the front elements of the gpgga and gprmc buffers synced to within tolerance
-      if (dt > gpgga_gprmc_sync_tol_)
-      {
-        // The gprmc message is more than tol older than the gpgga message,
-        // discard it and continue
-        gprmc_sync_buffer_.pop_front();
-      }
-      else if (-dt > gpgga_gprmc_sync_tol_)
-      {
-        // The gpgga message is more than tol older than the gprmc message,
-        // discard it and continue
-        gpgga_sync_buffer_.pop_front();
-      }
-      else // The gpgga and gprmc messages are synced
-      {
-        bool has_position = false;
-        bool pop_position = false;
+      auto gpsFix = boost::make_shared<gps_common::GPSFix>();
 
-        // Iterate over the position message buffer until we find one
-        // that is synced with the gpgga message
-        while (!position_sync_buffer_.empty())
+      // Speed & Track are filled in from BESTVEL logs, if available
+      while (!bestvel_sync_buffer_.empty())
+      {
+        auto& bestvel = bestvel_sync_buffer_.front();
+
+        // TODO pjr handle wrapping around week boundary?
+        double time_diff = std::fabs(bestvel->novatel_msg_header.gps_seconds -
+                                     bestpos->novatel_msg_header.gps_seconds);
+        if (time_diff < gpsfix_sync_tol_)
         {
-          // Calculate UTC position time from GPS seconds by subtracting out
-          // full days and applying the UTC offset
-          double gps_seconds = position_sync_buffer_.front()->novatel_msg_header.gps_seconds + utc_offset_;
-          if (gps_seconds < 0)
-          {
-              // Handle times around week boundaries
-              gps_seconds = gps_seconds + 604800;  // 604800 = 7 * 24 * 60 * 60 (seconds in a week)
-          }
-          auto days = static_cast<int32_t>(gps_seconds / 86400.0);
-          double position_time = gps_seconds - days * 86400.0;
-
-          // Find the time difference between gpgga and position time
-          double pos_dt = gpgga_time - position_time;
-          // Handle times around midnight
-          if (pos_dt > 43200.0)
-          {
-            pos_dt -= 86400.0;
-          }
-          if (pos_dt < -43200.0)
-          {
-            pos_dt += 86400.0;
-          }
-          if (pos_dt > gpgga_position_sync_tol_)
-          {
-            // The position message is more than tol older than the gpgga message,
-            // discard it and continue
-            ROS_DEBUG("Discarding a position message that is too old (%f < %f)", position_time, gpgga_time);
-            position_sync_buffer_.pop_front();
-          }
-          else if (-pos_dt > gpgga_position_sync_tol_)
-          {
-            // The position message is more than tol ahead of the gpgga message,
-            // use it but don't pop it
-            ROS_DEBUG("Waiting because the most recent GPGGA message is too old (%f > %f)", position_time, gpgga_time);
-            has_position = true;
-            break;
-          }
-          else //the gpgga and position tol messages are in sync
-          {
-            has_position = true;
-            pop_position = true;
-            break;
-          }
+          // Within tolerance, messages synced
+          gpsFix->track = bestvel->track_ground;
+          gpsFix->speed = std::sqrt(std::pow(bestvel->horizontal_speed, 2) + std::pow(bestvel->vertical_speed, 2));
+          synced = true;
+          break;
         }
-
-        if (has_position || !wait_for_position_)
+        else if (bestvel->novatel_msg_header.gps_seconds < bestpos->novatel_msg_header.gps_seconds)
         {
-          // If we have a position message (or don't need one), create and fill
-          // a GPS fix message
-          gps_common::GPSFixPtr gps_fix = boost::make_shared<gps_common::GPSFix>();
-          // Fill GPS fix message using the messages at the front of the two
-          // sync queues
-          extractor_.GetGpsFixMessage(
-              gprmc_sync_buffer_.front(),
-              gpgga_sync_buffer_.front(),
-              gps_fix);
-
-          // Remove the used messages from the two sync queues
-          gpgga_sync_buffer_.pop_front();
-          gprmc_sync_buffer_.pop_front();
-
-          if (has_position)
-          {
-            // We have a position message, so we can calculate variances
-            // from the standard deviations
-            double sigma_x = position_sync_buffer_.front()->lon_sigma;
-            gps_fix->position_covariance[0] = sigma_x * sigma_x;
-
-            double sigma_y = position_sync_buffer_.front()->lat_sigma;
-            gps_fix->position_covariance[4] = sigma_y * sigma_y;
-
-            double sigma_z = position_sync_buffer_.front()->height_sigma;
-            gps_fix->position_covariance[8] = sigma_z * sigma_z;
-
-            gps_fix->position_covariance_type =
-                gps_common::GPSFix::COVARIANCE_TYPE_DIAGONAL_KNOWN;
-
-            if (pop_position)
-            {
-              position_sync_buffer_.pop_front();
-            }
-          }
-
-          // Add the message to the fix message list
-          fix_messages.push_back(gps_fix);
+          // Bestvel timestamp is too old, throw it away and try again
+          bestvel_sync_buffer_.pop_front();
         }
-        else  // There is no position message (and wait_for_position is true)
+        else
         {
-          // return without pushing any more gps fix messages to the list
-          return;
+          // Latest bestvel message is too new, do nothing for now
+          break;
         }
-      }  // else (gpgga and gprmc synced)
-    }  // while (gpgga and gprmc buffers contain messages)
+      }
+
+      if (!synced && wait_for_sync_)
+      {
+        // TODO Handle this properly if bestvel is disabled
+        // If we have a bestpos and are configured to wait for a sync, we need
+        // to wait until a bestvel arrives.
+
+        break;
+      }
+
+      gpsFix->header.stamp = ros::Time::now();
+      gpsFix->altitude = bestpos->height;
+      gpsFix->latitude = bestpos->lat;
+      gpsFix->longitude = bestpos->lon;
+
+      if (bestpos->solution_status == "SOL_COMPUTED")
+      {
+        gpsFix->status.status = gps_common::GPSStatus::STATUS_FIX;
+      }
+      else
+      {
+        gpsFix->status.status = gps_common::GPSStatus::STATUS_NO_FIX;
+      }
+
+      gpsFix->time = bestpos->novatel_msg_header.gps_seconds;
+
+      gpsFix->status.header.stamp = gpsFix->header.stamp;
+      gpsFix->status.satellites_visible = bestpos->num_satellites_tracked;
+      gpsFix->status.satellites_used = bestpos->num_satellites_used_in_solution;
+
+      double sigma_x = bestpos->lon_sigma;
+      double sigma_x_squared = sigma_x * sigma_x;
+      gpsFix->position_covariance[0] = sigma_x_squared;
+
+      double sigma_y = bestpos->lat_sigma;
+      double sigma_y_squared = sigma_y * sigma_y;
+      gpsFix->position_covariance[4] = sigma_y_squared;
+
+      double sigma_z = bestpos->height_sigma;
+      gpsFix->position_covariance[8] = sigma_z * sigma_z;
+
+      // See https://www.novatel.com/assets/Documents/Bulletins/apn029.pdf for info about errors
+      // 2D error is 2*DRMS, or 95% probability
+      gpsFix->err_horz = 2.0 * std::sqrt(sigma_x_squared + sigma_y_squared);
+
+      // 3D error is 90% spherical accuracy standard
+      gpsFix->err = 0.833 * (sigma_x + sigma_y + sigma_z);
+
+      // Vertical error is 2*sigma for 95% probability
+      gpsFix->err_vert = 2.0 * sigma_z;
+
+      gpsFix->position_covariance_type =
+          gps_common::GPSFix::COVARIANCE_TYPE_DIAGONAL_KNOWN;
+
+      // DOPs are filled in from the PSRDOP2 log, if available
+      if (latest_psrdop2_)
+      {
+        gpsFix->gdop = latest_psrdop2_->gdop;
+        gpsFix->pdop = latest_psrdop2_->pdop;
+        gpsFix->hdop = latest_psrdop2_->hdop;
+        gpsFix->vdop = latest_psrdop2_->vdop;
+        if (!latest_psrdop2_->systems.empty())
+        {
+          // The PSRDOP2 log can have multiple TDOPs, but the GPSFix message
+          // only has one... so just use the first one.
+          gpsFix->tdop = latest_psrdop2_->systems.front().tdop;
+        }
+      }
+
+      // TODO Fill in orientation from INSATT on SPAN systems
+
+      fix_messages.push_back(gpsFix);
+      bestpos_sync_buffer_.pop_front();
+    }
   }
 
   void  NovatelGps::GetNovatelHeading2Messages(std::vector<novatel_gps_msgs::NovatelHeading2Ptr>& headings) {
@@ -478,6 +453,13 @@ namespace novatel_gps_driver
     imu_messages.clear();
     imu_messages.insert(imu_messages.end(), corrimudata_msgs_.begin(), corrimudata_msgs_.end());
     corrimudata_msgs_.clear();
+  }
+
+  void NovatelGps::GetNovatelPsrdop2Messages(std::vector<novatel_gps_msgs::NovatelPsrdop2Ptr>& psrdop2_messages)
+  {
+    psrdop2_messages.clear();
+    psrdop2_messages.insert(psrdop2_messages.end(), psrdop2_msgs_.begin(), psrdop2_msgs_.end());
+    psrdop2_msgs_.clear();
   }
 
   void NovatelGps::GetGpggaMessages(std::vector<novatel_gps_msgs::GpggaPtr>& gpgga_messages)
@@ -606,7 +588,7 @@ namespace novatel_gps_driver
       if (!Configure(opts))
       {
         // We will not kill the connection here, because the device may already
-        // be setup to communicate correctly, but we will print a warning         
+        // be setup to communicate correctly, but we will print a warning
         ROS_ERROR("Failed to configure GPS. This port may be read only, or the "
                  "device may not be functioning as expected; however, the "
                  "driver may still function correctly if the port has already "
@@ -1051,7 +1033,7 @@ namespace novatel_gps_driver
         novatel_gps_msgs::NovatelPositionPtr position = bestpos_parser_.ParseBinary(msg);
         position->header.stamp = stamp;
         novatel_positions_.push_back(position);
-        position_sync_buffer_.push_back(position);
+        bestpos_sync_buffer_.push_back(position);
         break;
       }
       case BestxyzParser::MESSAGE_ID:
@@ -1073,6 +1055,7 @@ namespace novatel_gps_driver
         novatel_gps_msgs::NovatelVelocityPtr velocity = bestvel_parser_.ParseBinary(msg);
         velocity->header.stamp = stamp;
         novatel_velocities_.push_back(velocity);
+        bestvel_sync_buffer_.push_back(velocity);
         break;
       }
       case Heading2Parser::MESSAGE_ID:
@@ -1140,6 +1123,14 @@ namespace novatel_gps_driver
         latest_insstdev_ = insstdev;
         break;
       }
+      case Psrdop2Parser::MESSAGE_ID:
+      {
+        auto psrdop2 = psrdop2_parser_.ParseBinary(msg);
+        psrdop2->header.stamp = stamp;
+        psrdop2_msgs_.push_back(psrdop2);
+        latest_psrdop2_ = psrdop2;
+        break;
+      }
       case RangeParser::MESSAGE_ID:
       {
         novatel_gps_msgs::RangePtr range = range_parser_.ParseBinary(msg);
@@ -1179,49 +1170,31 @@ namespace novatel_gps_driver
     {
       novatel_gps_msgs::GpggaPtr gpgga = gpgga_parser_.ParseAscii(sentence);
 
-      if (most_recent_utc_time < gpgga->utc_seconds)
+      auto gpgga_time = UtcFloatToSeconds(gpgga->utc_seconds);
+
+      if (most_recent_utc_time < gpgga_time)
       {
-        most_recent_utc_time = gpgga->utc_seconds;
+        most_recent_utc_time = gpgga_time;
       }
 
-      gpgga->header.stamp = stamp - ros::Duration(most_recent_utc_time - gpgga->utc_seconds);
+      gpgga->header.stamp = stamp - ros::Duration(most_recent_utc_time - gpgga_time);
 
-      if (gpgga_parser_.WasLastGpsValid())
-      {
-        gpgga_msgs_.push_back(gpgga);
-
-        // Make a deep copy for the sync buffer so the GPSFix messages
-        // don't get adjusted multiple times for the sync offset.
-        gpgga_sync_buffer_.push_back(*gpgga);
-      }
-      else
-      {
-        gpgga_msgs_.push_back(gpgga);
-      }
+      gpgga_msgs_.push_back(std::move(gpgga));
     }
     else if (sentence.id == GprmcParser::MESSAGE_NAME)
     {
       novatel_gps_msgs::GprmcPtr gprmc = gprmc_parser_.ParseAscii(sentence);
 
-      if (most_recent_utc_time < gprmc->utc_seconds)
+      auto gprmc_time = UtcFloatToSeconds(gprmc->utc_seconds);
+
+      if (most_recent_utc_time < gprmc_time)
       {
-        most_recent_utc_time = gprmc->utc_seconds;
+        most_recent_utc_time = gprmc_time;
       }
 
-      gprmc->header.stamp = stamp - ros::Duration(most_recent_utc_time - gprmc->utc_seconds);
+      gprmc->header.stamp = stamp - ros::Duration(most_recent_utc_time - gprmc_time);
 
-      if (gprmc_parser_.WasLastGpsValid())
-      {
-        gprmc_msgs_.push_back(gprmc);
-
-        // Make a deep copy for the sync buffer so the GPSFix messages
-        // don't get adjusted multiple times for the sync offset.
-        gprmc_sync_buffer_.push_back(*gprmc);
-      }
-      else
-      {
-        gprmc_msgs_.push_back(gprmc);
-      }
+      gprmc_msgs_.push_back(std::move(gprmc));
     }
     else if (sentence.id == GpgsaParser::MESSAGE_NAME)
     {
@@ -1254,7 +1227,7 @@ namespace novatel_gps_driver
       novatel_gps_msgs::NovatelPositionPtr position = bestpos_parser_.ParseAscii(sentence);
       position->header.stamp = stamp;
       novatel_positions_.push_back(position);
-      position_sync_buffer_.push_back(position);
+      bestpos_sync_buffer_.push_back(position);
     }
     else if (sentence.id == "BESTXYZA")
     {
@@ -1273,6 +1246,7 @@ namespace novatel_gps_driver
       novatel_gps_msgs::NovatelVelocityPtr velocity = bestvel_parser_.ParseAscii(sentence);
       velocity->header.stamp = stamp;
       novatel_velocities_.push_back(velocity);
+      bestvel_sync_buffer_.push_back(velocity);
     }
     else if (sentence.id == "HEADING2A")
     {
@@ -1332,6 +1306,13 @@ namespace novatel_gps_driver
       insstdev_msgs_.push_back(insstdev);
       latest_insstdev_ = insstdev;
     }
+    else if (sentence.id == "PSRDOP2A")
+    {
+      auto psrdop2 = psrdop2_parser_.ParseAscii(sentence);
+      psrdop2->header.stamp = stamp;
+      psrdop2_msgs_.push_back(psrdop2);
+      latest_psrdop2_ = psrdop2;
+    }
     else if (sentence.id == "TIMEA")
     {
       novatel_gps_msgs::TimePtr time = time_parser_.ParseAscii(sentence);
@@ -1381,19 +1362,20 @@ namespace novatel_gps_driver
         { "52", std::pair<double, std::string>(200, "Litef microIMU") },
         { "56", std::pair<double, std::string>(125, "Sensonor STIM300, Direct Connection") },
         { "58", std::pair<double, std::string>(200, "Honeywell HG4930 AN01") },
+        { "61", std::pair<double, std::string>(100, "Epson G370N") },
        };
-      
+
       // Parse out the IMU type then save it, we don't care about the rest (3rd field)
       std::string id = sentence.body.size() > 1 ? sentence.body[1] : "";
       if (rates.find(id) != rates.end())
       {
         double rate = rates[id].first;
- 
+
         ROS_INFO("IMU Type %s Found, Rate: %f Hz", rates[id].second.c_str(), (float)rate);
-        
+
         // Set the rate only if it hasn't been forced already
         if (!imu_rate_forced_)
-        {        
+        {
           SetImuRate(rate, false); // Dont force set from here so it can be configured elsewhere
         }
       }
@@ -1480,6 +1462,10 @@ namespace novatel_gps_driver
       if (option.first.find("heading2") != std::string::npos)
       {
       	command << "log " << option.first << " onnew " << "\r\n";
+      }
+      else if (option.second < 0.0)
+      {
+        command << "log " << option.first << " onchanged\r\n";
       }
       else
       {
